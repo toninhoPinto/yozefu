@@ -1,0 +1,51 @@
+---
+source: crates/lib/tests/deserializers/avro/mod.rs
+assertion_line: 94
+expression: record
+---
+{
+  "topic": "my-topic",
+  "timestamp": 0,
+  "partition": 0,
+  "offset": 0,
+  "headers": {},
+  "key_schema": {
+    "id": 1,
+    "schema_type": "AVRO"
+  },
+  "value_schema": {
+    "id": 3,
+    "schema_type": "AVRO"
+  },
+  "size": 380,
+  "key": {
+    "id": "2c78a422-fe06-4adb-9d88-ca4dfb941cbc",
+    "sunny": false
+  },
+  "value": {
+    "geometry": {
+      "coordinates": [
+        40.23,
+        12.3
+      ],
+      "type": "Point"
+    },
+    "properties": {
+      "_type": "address",
+      "city": "Neuilly-Plaisance",
+      "citycode": "93049",
+      "context": "93, Seine-Saint-Denis, Île-de-France",
+      "id": "93049_0960",
+      "importance": 0,
+      "label": "Chemin des Pelouses d'Avron 93360 Neuilly-Plaisance",
+      "name": "Chemin des Pelouses d'Avron",
+      "postcode": "93360",
+      "score": 0,
+      "street": "Chemin des Pelouses d'Avron",
+      "type": "street",
+      "x": 664706,
+      "y": 6863550
+    },
+    "type": "Feature"
+  }
+}

@@ -1,0 +1,78 @@
+---
+source: crates/lib/tests/search/mod.rs
+description: "from end - 5_000 where value contains \"uv\"   and k contains \"foobar\"    or t == \"french-recipes\"   and !(partition != 1) order by timestamp asc limit 100"
+expression: parse_search_query(input)
+input_file: crates/lib/tests/search/inputs/2.sql
+---
+Ok(
+    (
+        "",
+        SearchQuery {
+            expression: OrExpression(
+                [
+                    AndExpression(
+                        [
+                            Atom(
+                                Compare(
+                                    Value(
+                                        None,
+                                        Contain,
+                                        "uv",
+                                    ),
+                                ),
+                            ),
+                            Atom(
+                                Compare(
+                                    Key(
+                                        Contain,
+                                        "foobar",
+                                    ),
+                                ),
+                            ),
+                        ],
+                    ),
+                    AndExpression(
+                        [
+                            Atom(
+                                Compare(
+                                    Topic(
+                                        Equal,
+                                        "french-recipes",
+                                    ),
+                                ),
+                            ),
+                            Not(
+                                Parenthesis(
+                                    OrTerm(
+                                        AndTerm(
+                                            Atom(
+                                                Compare(
+                                                    Partition(
+                                                        NotEqual,
+                                                        1,
+                                                    ),
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            limit: Some(
+                100,
+            ),
+            from: Some(
+                OffsetTail(
+                    5000,
+                ),
+            ),
+            order_by: OrderBy {
+                order: Timestamp,
+                keyword: Asc,
+            },
+        },
+    ),
+)

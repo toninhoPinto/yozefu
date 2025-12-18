@@ -15,10 +15,32 @@
 
 //FILES avro/key-schema.json=avro/key-schema.json
 //FILES avro/value-schema.json=avro/value-schema.json
+//FILES avro/point-schema.json=avro/point-schema.json
 //FILES json-schema/value-schema.json=json-schema/value-schema.json
 //FILES json-schema/key-schema.json=json-schema/key-schema.json
 //FILES protobuf/key-schema.proto=protobuf/key-schema.proto
 //FILES protobuf/value-schema.proto=protobuf/value-schema.proto
+
+//SOURCES serializers/Into.java
+//SOURCES serializers/IntoText.java
+//SOURCES serializers/IntoJson.java
+//SOURCES serializers/IntoJsonSchema.java
+//SOURCES serializers/IntoAvro.java
+//SOURCES serializers/IntoXml.java
+//SOURCES serializers/IntoProtobuf.java
+//SOURCES serializers/IntoMalformed.java
+//SOURCES serializers/IntoInvalidJson.java
+
+
+import serializers.Into;
+import serializers.IntoText;
+import serializers.IntoJson;
+import serializers.IntoJsonSchema;
+import serializers.IntoAvro;
+import serializers.IntoXml;
+import serializers.IntoProtobuf;
+import serializers.IntoMalformed;
+import serializers.IntoInvalidJson;
 
 // jbang run ./MyProducer.java --type avro --topic public-french-addresses Nimes
 
@@ -61,8 +83,14 @@ import java.util.stream.Collectors;
 import io.confluent.kafka.schemaregistry.protobuf.ProtobufSchema;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
+import serializers.IntoMalformed;
+import serializers.IntoProtobuf;
+import serializers.IntoText;
+import serializers.IntoXml;
 import tech.allegro.schema.json2avro.converter.JsonAvroConverter;
-
+import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
 
 enum SerializerType {
     avro, json, jsonSchema, protobuf, text, malformed, invalidJson, xml
@@ -117,6 +145,8 @@ class MyProducer implements Callable<Integer> {
 
         props.putIfAbsent("bootstrap.servers", "localhost:9092");
         props.putIfAbsent("schema.registry.url", System.getenv().getOrDefault("YOZEFU_SCHEMA_REGISTRY_URL", "http://localhost:8081"));
+        props.putIfAbsent(KafkaAvroSerializerConfig.AUTO_REGISTER_SCHEMAS, false);
+        props.putIfAbsent("use.latest.version", true);
         var schemaRegistryUrl = props.getProperty("schema.registry.url");
         System.err.printf(" 📖 schema registry URL is %s\n", schemaRegistryUrl);
 
@@ -125,62 +155,65 @@ class MyProducer implements Callable<Integer> {
 
     public void produceOnce(Properties props, String url) throws Exception {
         var data = get(url, query);
+
+        var registryClient = new CachedSchemaRegistryClient(props.getProperty("schema.registry.url"), 100);
+
         switch (type) {
             case avro -> {
                 props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class.getName());
                 props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class.getName());
                 KafkaProducer<GenericRecord, GenericRecord> producer = new KafkaProducer<>(props);
-                produce(producer, new IntoAvro(), data, topic);
+                produce(producer, new IntoAvro(), data, topic, registryClient);
             }
             case json -> {
                 props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
                 props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
                 KafkaProducer<String, String> producer = new KafkaProducer<>(props);
-                produce(producer, new IntoJson(), data, topic);
+                produce(producer, new IntoJson(), data, topic, registryClient);
             }
             case jsonSchema -> {
                 props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, KafkaJsonSchemaSerializer.class.getName());
                 props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaJsonSchemaSerializer.class.getName());
                 KafkaProducer<JsonNode, JsonNode> producer = new KafkaProducer<>(props);
-                produce(producer, new IntoJsonSchema(), data, topic);
+                produce(producer, new IntoJsonSchema(), data, topic, registryClient);
             }
             case protobuf -> {
                 System.err.printf(" ⚠️ Protobuf serialization is experimental and may not work as expected\n");
                 props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, KafkaProtobufSerializer.class.getName());
                 props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaProtobufSerializer.class.getName());
                 KafkaProducer<Object, Object> producer = new KafkaProducer<>(props);
-                produce(producer, new IntoProtobuf(), data, topic);
+                produce(producer, new IntoProtobuf(), data, topic, registryClient);
             }
             case text -> {
                 props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
                 props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
                 KafkaProducer<String, String> producer = new KafkaProducer<>(props);
-                produce(producer, new IntoText(), data, topic);
+                produce(producer, new IntoText(), data, topic, registryClient);
             }
             case malformed -> {
                 props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
                 props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
                 KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props);
-                produce(producer, new IntoMalformed(), data, topic);
+                produce(producer, new IntoMalformed(), data, topic, registryClient);
             }
             case invalidJson -> {
                 props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, KafkaJsonSchemaSerializer.class.getName());
                 props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaJsonSchemaSerializer.class.getName());
                 KafkaProducer<JsonNode, JsonNode> producer = new KafkaProducer<>(props);
-                produce(producer, new IntoInvalidJson(), data, topic);
+                produce(producer, new IntoInvalidJson(), data, topic, registryClient);
             }
             case xml -> {
                 props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
                 props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
                 KafkaProducer<String, String> producer = new KafkaProducer<>(props);
-                produce(producer, new IntoXml(), data, topic);
+                produce(producer, new IntoXml(), data, topic, registryClient);
             }
             default -> {
                 System.err.printf(" ❕ Format '%s' is unknown. Known formats are ['avro', 'json', 'json-schema', 'text', 'malformed']\n", type);
                 props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
                 props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
                 KafkaProducer<String, String> producer = new KafkaProducer<>(props);
-                produce(producer, new IntoText(), data, topic);
+                produce(producer, new IntoText(), data, topic, registryClient);
             }
         }
     }
@@ -198,7 +231,8 @@ class MyProducer implements Callable<Integer> {
         }
     }
 
-    public static <K, V> void produce(final KafkaProducer<K, V> producer, final Into<K, V> mapper, final List<String> addresses, final String topic) throws Exception {
+    public static <K, V> void produce(final KafkaProducer<K, V> producer, final Into<K, V> mapper, final List<String> addresses, final String topic, final SchemaRegistryClient registryClient) throws Exception {
+        mapper.registerSchemas(registryClient);
         for (var address : addresses) {
             var record = mapper.into(address, topic);
             producer.send(record, onSend());
@@ -253,134 +287,4 @@ class MyProducer implements Callable<Integer> {
         System.exit(exitCode);
     }
 
-}
-
-
-interface Into<K, V> {
-    ProducerRecord<K, V> into(final String value, final String topic) throws Exception;
-
-    default String generateKey() {
-        return UUID.randomUUID().toString();
-    }
-
-    default String readResource(String path) throws Exception {
-        try(var in = Into.class.getResourceAsStream(path)) {
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
-    }
-}
-
-class IntoText implements Into<String, String> {
-    public ProducerRecord<String, String> into(final String value, final String topic) throws JsonProcessingException {
-        var objectMapper = new ObjectMapper();
-        var object = objectMapper.readTree(value);
-        return new ProducerRecord<>(topic, this.generateKey(), object.get("properties").get("label").asText());
-    }
-}
-
-class IntoJson implements Into<String, String> {
-    public ProducerRecord<String, String> into(final String value, final String topic) {
-        return new ProducerRecord<>(topic, generateKey(), value);
-    }
-}
-
-class IntoJsonSchema implements Into<JsonNode, JsonNode> {
-    public ProducerRecord<JsonNode, JsonNode> into(final String input, final String topic) throws Exception {
-        var objectMapper = new ObjectMapper();
-        var keySchemaString = readResource("/json-schema/key-schema.json");
-        var valueSchemaString = readResource("/json-schema/value-schema.json");
-        var keySchema = objectMapper.readTree(keySchemaString);
-        var valueSchema = objectMapper.readTree(valueSchemaString);
-
-        var key = TextNode.valueOf(generateKey());
-        var keyEnvelope = JsonSchemaUtils.envelope(keySchema, key);
-
-        var value = objectMapper.readTree(input);
-        var valueEnvelope = JsonSchemaUtils.envelope(valueSchema, value);
-
-        return new ProducerRecord<>(topic, keyEnvelope, valueEnvelope);
-    }
-}
-
-class IntoAvro implements Into<GenericRecord, GenericRecord> {
-    public ProducerRecord<GenericRecord, GenericRecord> into(final String input, final String topic) throws Exception {
-        var keySchemaString = readResource("/avro/key-schema.json");
-        var valueSchemaString = readResource("/avro/value-schema.json");
-
-        Schema.Parser schemaParser = new Schema.Parser();
-        Schema keySchema = schemaParser.parse(keySchemaString);
-        Schema valueSchema = schemaParser.parse(valueSchemaString);
-        JsonAvroConverter converter = new JsonAvroConverter();
-
-        var keyString = String.format("{ \"id\": \"%s\", \"sunny\": %s }", generateKey(), new Random().nextBoolean());
-        GenericData.Record key = converter.convertToGenericDataRecord(keyString.getBytes(), keySchema);
-        GenericData.Record value = converter.convertToGenericDataRecord(input.getBytes(), valueSchema);
-        return new ProducerRecord<>(topic, key, value);
-    }
-}
-
-// TODO work in progress
-class IntoProtobuf implements Into<Object, Object> {
-    public ProducerRecord<Object, Object> into(final String input, final String topic) throws Exception {
-        var keySchemaString = readResource("/protobuf/key-schema.proto");
-        var valueSchemaString = readResource("/protobuf/value-schema.proto");
-
-        ProtobufSchema keySchema = new ProtobufSchema(keySchemaString);
-        var keyString = String.format("{\"id\": \"%s\"}", this.generateKey());
-        var key = (DynamicMessage) ProtobufSchemaUtils.toObject(keyString, keySchema);
-
-        ProtobufSchema valueSchema = new ProtobufSchema(valueSchemaString);
-        var value = (DynamicMessage) ProtobufSchemaUtils.toObject(input, valueSchema);
-
-        return new ProducerRecord<>(topic, key, value);
-    }
-}
-
-class IntoMalformed implements Into<byte[], byte[]> {
-    public ProducerRecord<byte[], byte[]> into(final String input, final String topic) throws Exception {
-        byte randomSchemaId = (byte) ((Math.random() * (127 - 1)) + 1);
-        var header = new byte[]{0, 0, 0, 0, randomSchemaId};
-
-        ByteArrayOutputStream keyOutput = new ByteArrayOutputStream();
-        keyOutput.write(header);
-        keyOutput.write((generateKey() + " key").getBytes());
-
-        randomSchemaId = (byte) ((Math.random() * (127 - 1)) + 1);
-        header = new byte[]{0, 0, 0, 0, randomSchemaId};
-        ByteArrayOutputStream valueOutput = new ByteArrayOutputStream();
-        valueOutput.write(header);
-        var objectMapper = new ObjectMapper();
-        var object = objectMapper.readTree(input);
-        valueOutput.write(object.get("properties").get("context").asText().getBytes(StandardCharsets.UTF_8));
-
-        return new ProducerRecord<>(topic, keyOutput.toByteArray(), valueOutput.toByteArray());
-    }
-}
-
-class IntoInvalidJson implements Into<JsonNode, JsonNode> {
-    public ProducerRecord<JsonNode, JsonNode> into(final String input, final String topic) throws Exception {
-        var objectMapper = new ObjectMapper();
-        var keySchemaString = readResource("/json-schema/key-schema.json");
-        var valueSchemaString = readResource("/json-schema/value-schema.json");
-        var keySchema = objectMapper.readTree(keySchemaString);
-        var valueSchema = objectMapper.readTree(valueSchemaString);
-
-        var key = TextNode.valueOf(generateKey());
-        var keyEnvelope = JsonSchemaUtils.envelope(keySchema, key);
-
-        var value = objectMapper.readTree(input);
-        ((ObjectNode) value).put("updatedAt", "2007");
-        var valueEnvelope = JsonSchemaUtils.envelope(valueSchema, value);
-
-        return new ProducerRecord<>(topic, keyEnvelope, valueEnvelope);
-    }
-}
-
-class IntoXml implements Into<String, String> {
-    public ProducerRecord<String, String> into(final String input, final String topic) throws Exception {
-        var objectMapper = new ObjectMapper();
-        var xmlMapper = new XmlMapper();
-        var value = objectMapper.readTree(input);
-        return new ProducerRecord<>(topic, generateKey(), xmlMapper.writeValueAsString(value));
-    }
 }

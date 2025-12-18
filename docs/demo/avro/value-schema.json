@@ -19,29 +19,9 @@
       "name": "geometry",
       "type": [
         {
-          "name": "Point",
+          "name": "point",
           "doc": "Describes a point geometry",
-          "type": "record",
-          "fields": [
-            {
-              "name": "type",
-              "type": {
-                "type": "enum",
-                "name": "PointType",
-                "symbols": [
-                  "Point"
-                ]
-              },
-              "default": "Point"
-            },
-            {
-              "name": "coordinates",
-              "type": {
-                "type": "array",
-                "items": "double"
-              }
-            }
-          ]
+          "type": "io.maif.yozefu.Point"
         },
         {
           "name": "MultiPoint",
